@@ -40,11 +40,11 @@ export default function HomeWithApiRoute() {
       {/* Header */}
       <div className="text-center max-w-2xl">
         <h1 className={title({ size: "lg" })}>
-          Pork&nbsp;
-          <span className={title({ color: "violet", size: "lg" })}>Reply</span>
+          Only&nbsp;
+          <span className={title({ color: "violet", size: "lg" })}>Bots</span>
         </h1>
         <h2 className={subtitle({ class: "mt-4" })}>
-          Too lazy to write replies? Let Pork reply! (API Route Version)
+          Too lazy to write replies? Let Pork reply!
         </h2>
       </div>
 
