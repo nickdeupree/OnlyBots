@@ -7,22 +7,38 @@ import {
   Card, 
   CardBody, 
   CardHeader,
-  Divider 
+  Divider,
+  addToast,
+  Tabs,
+  Tab
 } from "@heroui/react";
 
 import ReactMarkdown from "react-markdown";
-
-import { title, subtitle } from "@/components/primitives";
+import ApiKeyModal from "@/components/api-key-modal";
 
 export default function HomeWithApiRoute() {
   const [message, setMessage] = useState("");
-  const [replyStyle, setReplyStyle] = useState("");
+  const [replyIdea, setReplyIdea] = useState("");
   const [reply, setReply] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const lastRequestTime = useRef<number>(0);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [selectedReplyStyle, setSelectedReplyStyle] = useState<string>("default");
+  const [mode, setMode] = useState<string>("reply");
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState<string>("");
 
   const COOLDOWN_MS = 3000;
+
+  const DOING_WARMUP = false; 
+
+  useEffect(() => {
+    // Load custom API key from localStorage on component mount
+    const savedApiKey = localStorage.getItem("openrouter_api_key");
+    if (savedApiKey) {
+      setCustomApiKey(savedApiKey);
+    }
+  }, []);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -36,10 +52,24 @@ export default function HomeWithApiRoute() {
 
   useEffect(() => {
     const warmupOpenRouter = async () => {
-      try {
+      if (DOING_WARMUP){
+        try {
+        const hasWarmedUp = localStorage.getItem("openrouter-warmed-up");
+        const lastWarmup = localStorage.getItem("openrouter-last-warmup");
+
+        const WARMUP_COOLDOWN = 3600000; // 1 hour in milliseconds
+        const now = Date.now();
+
+        if (hasWarmedUp && lastWarmup && (now - parseInt(lastWarmup)) < WARMUP_COOLDOWN) {
+          return;
+        }
+
         await fetch('/api/openrouter-warmup');
-      } catch (error) {
-        console.error("Failed to warm up OpenRouter API:", error);
+        localStorage.setItem("openrouter-warmed-up", "true");
+        localStorage.setItem("openrouter-last-warmup", now.toString());
+        } catch (error) {
+          console.error("Failed to warm up OpenRouter API:", error);
+        }
       }
     };
     warmupOpenRouter();
@@ -47,7 +77,8 @@ export default function HomeWithApiRoute() {
 
   const clearFields = () => {
     setMessage("");
-    setReplyStyle("");
+    setReplyIdea("");
+    setSelectedReplyStyle("");
     setReply("");
     setIsLoading(false);
   }
@@ -68,10 +99,18 @@ export default function HomeWithApiRoute() {
     lastRequestTime.current = now;
 
     try {
+      const requestBody = { 
+        message,
+        selectedReplyStyle,
+        mode,
+        replyIdea,
+        customApiKey: customApiKey || undefined, // Only send if not empty
+      };
+
       const res = await fetch("/api/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, replyStyle }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!res.ok) {
@@ -84,6 +123,14 @@ export default function HomeWithApiRoute() {
 
       const { reply } = await res.json();
       setReply(reply);
+      
+      // Auto-copy the reply to clipboard
+      try {
+        await navigator.clipboard.writeText(reply);
+        addToast({title: "Reply copied to clipboard"})
+      } catch (error) {
+        console.error("Failed to copy reply to clipboard:", error);
+      }
     } catch (err) {
       const errMsg =
         err instanceof Error ? err.message : "Unknown client error";
@@ -98,29 +145,80 @@ export default function HomeWithApiRoute() {
     <section className="flex flex-col items-center justify-center gap-8 py-8 md:py-10 max-w-4xl mx-auto px-4">
       {/* Header */}
       <div className="text-center max-w-2xl">
-        <h1 className={title({ size: "lg" })}>
+        <h1 className="text-4xl lg:text-6xl tracking-tight inline font-semibold">
           Only&nbsp;
-          <span className={title({ color: "violet", size: "lg" })}>Bots</span>
+          <span className="bg-clip-text text-transparent bg-gradient-to-b from-[#FF1CF7] to-[#b249f8]">Bots</span>
         </h1>
-        <h2 className={subtitle({ class: "mt-4" })}>
-          Too lazy to write replies? Let Pork reply!
+        <h2 className="w-full my-2 text-lg lg:text-xl text-default-600 block max-w-full mt-4">
+          Too lazy to reply? Use AI!
         </h2>
       </div>
 
       {/* Main Form Card */}
       <Card className="w-full max-w-2xl shadow-lg">
         <CardHeader className="pb-2">
-          <h3 className="text-xl font-semibold text-default-700">
-            Generate Your Reply
-          </h3>
+          <div className="flex justify-between items-center w-full">
+            <h3 className="text-xl font-semibold text-default-700">
+              Generate Your {mode === "reply" ? "Reply" : "Message"}
+            </h3>
+            <Button
+              isIconOnly
+              variant="light"
+              size="sm"
+              onPress={() => setIsApiKeyModalOpen(true)}
+              className="text-default-400 hover:text-default-600"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="size-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+            </Button>
+          </div>
         </CardHeader>
         <Divider />
         <CardBody className="gap-6 pt-6">
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            <Textarea
+            <div>
+              <Tabs
+                size="lg"
+                variant="underlined"
+                selectedKey={mode}
+                onSelectionChange={(key) => {
+                  setMode(key as string);
+                }}
+              >
+                <Tab title="Reply" key="reply" className="text-default-600">
+                </Tab>
+                <Tab title="Create" key="create" className="text-default-600">
+                </Tab>
+              </Tabs>
+            </div>
+
+            <div>
+              <Tabs
+                size="sm"
+                selectedKey={selectedReplyStyle}
+                onSelectionChange={(key) => {
+                  setSelectedReplyStyle(key as string);
+                }}
+              >
+                <Tab title="Default" key="default" className="text-default-600">
+                </Tab>
+                <Tab title="Dad" key="dad" className="text-default-600">
+                </Tab>
+                <Tab title="Huzz"key="huzz" className="text-default-600">
+                </Tab>
+                <Tab title="Gravy Seal"key="gravy" className="text-default-600">
+                </Tab>
+              </Tabs>
+            </div>
+
+            {/* Message Input */}
+            <div>
+              <Textarea
               name="message"
-              label="Their Message"
-              placeholder="Enter the message you want to reply to..."
+              label={mode === "reply" ? "Their Message" : "Message"}
+              placeholder={mode === "reply" ?"Enter the message you want to reply to..." : "Enter your message..."}
               value={message}
               onValueChange={setMessage}
               variant="bordered"
@@ -130,22 +228,26 @@ export default function HomeWithApiRoute() {
               classNames={{
                 input: "text-base",
               }}
-            />
+              />
+            </div>
 
-            {/* Reply Style Input */}
-            <Textarea
-              name="replyStyle"
-              label="How should we reply?"
-              placeholder="Describe what you want to say. Or leave it blank."
-              value={replyStyle}
-              onValueChange={setReplyStyle}
-              variant="bordered"
-              minRows={3}
-              maxRows={5}
-              classNames={{
-                input: "text-base",
-              }}
-            />
+            {mode === "reply" && (
+              <div>
+                <Textarea
+                  name="replyIdea"
+                  label="How should we reply?"
+                  placeholder="Describe what you want to say. Or leave it blank."
+                  value={replyIdea}
+                  onValueChange={setReplyIdea}
+                  variant="bordered"
+                  minRows={3}
+                  maxRows={5}
+                  classNames={{
+                    input: "text-base",
+                  }}
+                />
+              </div>
+            )}
 
             {/* Submit Button */}
             <Button
@@ -159,10 +261,10 @@ export default function HomeWithApiRoute() {
               className="font-semibold"
             >
               {isLoading 
-                ? "Generating Reply..." 
+                ? `Generating ${mode === "reply" ? "Reply" : "Message"}...` 
                 : cooldownRemaining > 0 
                   ? `Wait ${Math.ceil(cooldownRemaining / 1000)}s` 
-                  : "Get Smart Reply"
+                  : `Get ${mode === "reply" ? "Reply" : "Message"}`
               }
             </Button>
           </form>
@@ -174,7 +276,7 @@ export default function HomeWithApiRoute() {
         <Card className="w-full max-w-2xl shadow-lg">
           <CardHeader className="pb-2">
             <h3 className="text-xl font-semibold text-success-600">
-              Generated Reply
+              Generated {mode === "reply" ? "Reply" : "Message"}
             </h3>
           </CardHeader>
           <Divider />
@@ -209,11 +311,16 @@ export default function HomeWithApiRoute() {
                 size="sm"
                 variant="flat"
                 color="primary"
-                onPress={() => {
-                  navigator.clipboard.writeText(reply);
+                onPress={async () => {
+                  try {
+                    await navigator.clipboard.writeText(reply);
+                    addToast({title: "Reply copied to clipboard"});
+                  } catch (error) {
+                    console.error("Failed to copy reply:", error);
+                  }
                 }}
               >
-                Copy Reply
+                Copy {mode === "reply" ? "Reply" : "Message"}
               </Button>
               <Button
                 size="sm"
@@ -227,6 +334,13 @@ export default function HomeWithApiRoute() {
           </CardBody>
         </Card>
       )}
+
+      {/* API Key Settings Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        onApiKeyChange={(newApiKey) => setCustomApiKey(newApiKey)}
+      />
     </section>
   );
 }

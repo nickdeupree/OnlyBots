@@ -23,7 +23,7 @@ export async function GET() {
                     messages: [
                         {
                             role: "user",
-                            content: `hi`,
+                            content: `.`,
                         },
                     ],
                     max_tokens: 1,

@@ -4,7 +4,7 @@ import { generateReplyBackend } from '../../actions/reply'; // Adjust the import
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, replyStyle } = body;
+    const { message, replyStyle, mode, replyIdea, customApiKey } = body;
     
     if (!message) {
       return NextResponse.json(
@@ -13,8 +13,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // TODO: Implement your backend logic here
-    const reply = await generateReplyBackend(message, replyStyle);
+    const reply = await generateReplyBackend(message, replyStyle, mode, replyIdea, customApiKey);
     
     return NextResponse.json({ reply });
     
