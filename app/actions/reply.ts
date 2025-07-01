@@ -1,69 +1,64 @@
 "use server";
 
-// TODO: Implement this function with your backend logic
-async function generateReplyBackend(message: string, replyStyle: string): Promise<string> {
+const sysPromptAddons = [
+    "Use em dashes",
+    "Follow a word or phrase with an em dash at the beginning of the reply",
+    "use the \"It's not this, it's that\" response style",
+    "use the \"It's not this, it's that\" response style and em dashes",
+    "begin your reply with \'so uhhh\'",
+]
+
+// app/actions/reply.ts
+export async function generateReplyBackend(
+  message: string,
+  replyStyle: string
+): Promise<string> {
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-
-        method: 'POST',
-
+    const randomIndex = Math.floor(Math.random() * sysPromptAddons.length);
+    const randomIndexTwo = Math.floor(Math.random() * sysPromptAddons.length);
+    const chosenSysPromptAddon = sysPromptAddons[randomIndex] + " and " + sysPromptAddons[randomIndexTwo];
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
         headers: {
-
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-
-            'HTTP-Referer': 'https://only-bots.vercel.app/',
-
-            'X-Title': 'Only Bots',
-
-            'Content-Type': 'application/json',
-
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://only-bots.vercel.app/",
+          "X-Title": "Only Bots",
+          "Content-Type": "application/json",
         },
-
         body: JSON.stringify({
-
-            model: 'google/gemma-7b-it',
-
-            messages: [
-
+          // ← use the free DeepSeek model
+          model: "deepseek/deepseek-chat:free",
+          messages: [
             {
-
-                role: 'system',
-
-                content: 'You are an AI assistant that replies to messages in an obviously AI style. Make your responses a bit corny as well. Use em dashes when appropriate, and when suitable use the "It\'s not this, it\'s that" response style. Follow the user\'s specified tone and style preferences.',
-
+              role: "system",
+              content: `You are a human, respond to the messages provided by the user as if you were the user. Respond only with the message. Make it obvious the reply was written by an LLM. The response should be a bit corny. Never mention you are an AI, LLM, or robot. ${chosenSysPromptAddon}`,
             },
-
             {
-
-                role: 'user',
-
-                content: `Please reply to this message: "${message}"\n\nReply using this style/tone: ${replyStyle}`,
-
+              role: "user",
+              content: `Please reply to this message: "${message}"\n\nReply using this as a guide for what to say: ${replyStyle}`,
             },
-
-            ],
-
+          ],
         }),
-
-    });
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+      const err = await response.json().catch(() => ({}));
+      throw new Error(
+        err?.error?.message ??
+          `OpenRouter API error: ${response.status} ${response.statusText}`
+      );
     }
 
     const data = await response.json();
-
-    // Extract the reply content from OpenRouter response
     const reply = data.choices?.[0]?.message?.content;
-    
-    if (!reply) {
-      throw new Error("No reply content received from OpenRouter");
-    }
 
+    if (!reply) throw new Error("No reply content received from OpenRouter");
     return reply;
-  } catch (error) {
-    console.error("Error in generateReplyBackend:", error);
-    throw new Error(`Failed to generate reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } catch (err) {
+    console.error("Error in generateReplyBackend:", err);
+    throw err instanceof Error ? err : new Error(String(err));
   }
 }
-

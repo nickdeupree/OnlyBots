@@ -1,11 +1,7 @@
-// Alternative implementation using the API route instead of server actions
-// You can switch between this and the server action approach in app/page.tsx
-
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
-  Input, 
   Textarea, 
   Button, 
   Card, 
@@ -14,24 +10,87 @@ import {
   Divider 
 } from "@heroui/react";
 
+import ReactMarkdown from "react-markdown";
+
 import { title, subtitle } from "@/components/primitives";
-import { useReplyGenerator } from "@/hooks/useReplyGenerator";
 
 export default function HomeWithApiRoute() {
   const [message, setMessage] = useState("");
   const [replyStyle, setReplyStyle] = useState("");
   const [reply, setReply] = useState("");
-  const { generateReply, isLoading } = useReplyGenerator();
+  const [isLoading, setIsLoading] = useState(false);
+  const lastRequestTime = useRef<number>(0);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+
+  const COOLDOWN_MS = 3000;
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (cooldownRemaining > 0) {
+      interval = setInterval(() => {
+        setCooldownRemaining(prev => Math.max(0, prev - 1000));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [cooldownRemaining]);
+
+  useEffect(() => {
+    const warmupOpenRouter = async () => {
+      try {
+        await fetch('/api/openrouter-warmup');
+      } catch (error) {
+        console.error("Failed to warm up OpenRouter API:", error);
+      }
+    };
+    warmupOpenRouter();
+  }, []);
+
+  const clearFields = () => {
+    setMessage("");
+    setReplyStyle("");
+    setReply("");
+    setIsLoading(false);
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
+
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime.current;
+
+    if (timeSinceLastRequest < COOLDOWN_MS) {
+      const remaining = COOLDOWN_MS - timeSinceLastRequest;
+      setCooldownRemaining(remaining);
+      return;
+    }
+
+    setIsLoading(true);
+    lastRequestTime.current = now;
+
     try {
-      const generatedReply = await generateReply(message, replyStyle);
-      setReply(generatedReply);
-    } catch (error) {
-      console.error('Error generating reply:', error);
-      setReply("Sorry, there was an error generating your reply. Please try again.");
+      const res = await fetch("/api/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, replyStyle }),
+      });
+
+      if (!res.ok) {
+        const { error } = await res.json();
+        if (res.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait before trying again.");
+        }
+        throw new Error(error ?? "Unknown server error");
+      }
+
+      const { reply } = await res.json();
+      setReply(reply);
+    } catch (err) {
+      const errMsg =
+        err instanceof Error ? err.message : "Unknown client error";
+      setReply(`Error: ${errMsg}`);
+      console.error(errMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -83,7 +142,6 @@ export default function HomeWithApiRoute() {
               variant="bordered"
               minRows={3}
               maxRows={5}
-              isRequired
               classNames={{
                 input: "text-base",
               }}
@@ -97,10 +155,15 @@ export default function HomeWithApiRoute() {
               radius="lg"
               variant="shadow"
               isLoading={isLoading}
-              isDisabled={!message.trim() || !replyStyle.trim()}
+              isDisabled={!message.trim() || cooldownRemaining > 0}
               className="font-semibold"
             >
-              {isLoading ? "Generating Reply..." : "Get Smart Reply"}
+              {isLoading 
+                ? "Generating Reply..." 
+                : cooldownRemaining > 0 
+                  ? `Wait ${Math.ceil(cooldownRemaining / 1000)}s` 
+                  : "Get Smart Reply"
+              }
             </Button>
           </form>
         </CardBody>
@@ -117,9 +180,29 @@ export default function HomeWithApiRoute() {
           <Divider />
           <CardBody className="pt-6">
             <div className="bg-default-50 p-4 rounded-lg border-l-4 border-success-500">
-              <p className="text-default-700 leading-relaxed whitespace-pre-wrap">
-                {reply}
-              </p>
+              <div className="text-default-700 leading-relaxed whitespace-pre-wrap">
+                <ReactMarkdown
+                  components={{
+                    // Style the markdown elements
+                    p: ({ children }) => <p className="mb-2">{children}</p>,
+                    strong: ({ children }) => <strong className="font-bold text-primary-600">{children}</strong>,
+                    em: ({ children }) => <em className="italic text-secondary-600">{children}</em>,
+                    h1: ({ children }) => <h1 className="text-xl font-bold mb-2">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-lg font-semibold mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-md font-medium mb-1">{children}</h3>,
+                    ul: ({ children }) => <ul className="list-disc pl-4 mb-2">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-4 mb-2">{children}</ol>,
+                    li: ({ children }) => <li className="mb-1">{children}</li>,
+                    code: ({ children, node }) => 
+                      node?.tagName === 'code' && Array.isArray(node?.properties?.className) && node.properties.className.some((cls) => typeof cls === 'string' && cls.includes('language-')) ? 
+                        <code className="block bg-default-200 p-2 rounded text-sm font-mono">{children}</code> :
+                        <code className="bg-default-200 px-1 py-0.5 rounded text-sm font-mono">{children}</code>,
+                    blockquote: ({ children }) => <blockquote className="border-l-2 border-default-300 pl-3 italic">{children}</blockquote>
+                  }}
+                >
+                  {reply}
+                </ReactMarkdown>
+              </div>
             </div>
             <div className="flex gap-2 mt-4">
               <Button
@@ -136,7 +219,7 @@ export default function HomeWithApiRoute() {
                 size="sm"
                 variant="flat"
                 color="default"
-                onPress={() => setReply("")}
+                onPress={() => clearFields()}
               >
                 Clear
               </Button>
@@ -144,45 +227,6 @@ export default function HomeWithApiRoute() {
           </CardBody>
         </Card>
       )}
-
-      {/* Features Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl mt-8">
-        <Card className="shadow-sm">
-          <CardBody className="text-center p-6">
-            <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-primary-600 text-xl">🎯</span>
-            </div>
-            <h4 className="font-semibold text-default-700 mb-2">Contextual</h4>
-            <p className="text-sm text-default-500">
-              Replies are tailored to your specific message and context
-            </p>
-          </CardBody>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardBody className="text-center p-6">
-            <div className="w-12 h-12 bg-secondary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-secondary-600 text-xl">✨</span>
-            </div>
-            <h4 className="font-semibold text-default-700 mb-2">Customizable</h4>
-            <p className="text-sm text-default-500">
-              Choose your preferred tone, style, and approach
-            </p>
-          </CardBody>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardBody className="text-center p-6">
-            <div className="w-12 h-12 bg-success-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-success-600 text-xl">⚡</span>
-            </div>
-            <h4 className="font-semibold text-default-700 mb-2">Instant</h4>
-            <p className="text-sm text-default-500">
-              Get intelligent replies in seconds
-            </p>
-          </CardBody>
-        </Card>
-      </div>
     </section>
   );
 }
