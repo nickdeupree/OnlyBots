@@ -110,7 +110,6 @@ export default function HomeWithApiRoute() {
 
     setIsLoading(true);
     lastRequestTime.current = now;
-
     try {
       const requestBody = {
         message,
@@ -146,9 +145,7 @@ export default function HomeWithApiRoute() {
         await navigator.clipboard.writeText(reply);
         addToast({ title: "Reply copied to clipboard" });
       } catch (error) {
-        throw new Error(
-          "Failed to copy reply to clipboard. Please copy manually.",
-        );
+        addToast({title: "Could not auto copy reply to clipboard" });
       }
     } catch (err) {
       const errMsg =
@@ -388,9 +385,8 @@ export default function HomeWithApiRoute() {
                     await navigator.clipboard.writeText(reply);
                     addToast({ title: "Reply copied to clipboard" });
                   } catch (error) {
-                    throw new Error(
-                      "Failed to copy reply to clipboard. Please copy manually.",
-                    );
+                    addToast({
+                      title: "Failed to copy reply"})
                   }
                 }}
               >

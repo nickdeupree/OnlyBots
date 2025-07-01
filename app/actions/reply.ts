@@ -30,8 +30,7 @@ const replyStyles = {
   default: "",
   dad: "Begin your reply with 'so uhhh...', You are a stereotypical dad who uses stereotypical white cliches.",
   huzz: "Reply like you are flirting.",
-  gravy:
-    "Reply as if you are a gravy seal. Do not mention you are a gravy seal.",
+  gravy: "Reply as if you are a gravy seal. Do not mention you are a gravy seal.",
 } as const;
 
 type ReplyStyle = keyof typeof replyStyles;
